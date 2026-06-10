@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Volatility Prediction Engine</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Mono:wght@300;400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#070A0F;--bg2:#0D1117;--bg3:#141B24;--bg4:#1C2532;
+  --gold:#BFA76F;--gold2:#D4B96A;--gold3:#8A7340;
+  --text:#E8E0D0;--text2:#A09880;--text3:#6B6050;
+  --green:#4CAF7D;--red:#E05C5C;--blue:#5B9BD5;--amber:#D4884A;
+  --border:#1E2A38;--border2:#263040;
+  --fomc:#BFA76F;--cpi:#5B9BD5;--rbi:#4CAF7D;--geo:#E05C5C;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;overflow-x:hidden}
+
+/* ── HEADER ── */
+header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;gap:20px;position:sticky;top:0;z-index:100}
+.logo{font-family:'Playfair Display',serif;font-size:16px;color:var(--gold);letter-spacing:.04em;white-space:nowrap;margin-right:auto}
+.logo span{font-size:10px;color:var(--text3);display:block;font-family:'DM Mono',monospace;letter-spacing:.1em}
+.ctrl{display:flex;align-items:center;gap:8px}
+select,input[type=text]{background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:5px 10px;border-radius:3px;font-family:'DM Mono',monospace;font-size:12px;outline:none}
+select:focus,input:focus{border-color:var(--gold3)}
+.btn{background:var(--gold3);color:var(--bg);border:none;padding:6px 16px;border-radius:3px;font-family:'DM Mono',monospace;font-size:12px;cursor:pointer;letter-spacing:.05em;transition:background .15s}
+.btn:hover{background:var(--gold)}
+.status{font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);padding:3px 8px;border-radius:2px;border:1px solid var(--border)}
+.status.live{color:var(--green);border-color:var(--green)}
+
+/* ── TABS ── */
+nav.tabs{background:var(--bg2);border-bottom:1px solid var(--border);display:flex;gap:0;padding:0 24px}
+.tab{padding:12px 20px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;text-transform:uppercase}
+.tab:hover{color:var(--text2)}
+.tab.active{color:var(--gold);border-color:var(--gold)}
+
+/* ── LAYOUT ── */
+main{padding:20px 24px;max-width:1600px;margin:0 auto}
+.panel{visibility:hidden;height:0;overflow:hidden;pointer-events:none}
+.panel.active{visibility:visible;height:auto;overflow:visible;pointer-events:all}
+
+/* ── CARDS ── */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:14px 16px}
+.card-label{font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+.card-value{font-family:'DM Mono',monospace;font-size:20px;color:var(--gold);font-weight:500}
+.card-sub{font-size:10px;color:var(--text3);margin-top:3px;font-family:'DM Mono',monospace}
+.card-badge{display:inline-block;padding:2px 7px;border-radius:2px;font-size:10px;font-family:'DM Mono',monospace;margin-top:5px}
+.badge-low{background:rgba(76,175,125,.15);color:var(--green)}
+.badge-med{background:rgba(212,136,74,.15);color:var(--amber)}
+.badge-high{background:rgba(224,92,92,.15);color:var(--red)}
+.badge-amp{background:rgba(224,92,92,.15);color:var(--red)}
+.badge-neu{background:rgba(160,152,128,.15);color:var(--text2)}
+.badge-damp{background:rgba(76,175,125,.15);color:var(--green)}
+
+/* ── CHART BOXES ── */
+.chart-row{display:grid;gap:16px;margin-bottom:16px}
+.chart-row.cols2{grid-template-columns:1fr 1fr}
+.chart-row.cols3{grid-template-columns:2fr 1fr 1fr}
+.chart-box{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:16px}
+.chart-box.full{grid-column:1/-1}
+.chart-title{font-family:'Playfair Display',serif;font-size:13px;color:var(--gold2);margin-bottom:4px}
+.chart-sub{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:12px;letter-spacing:.05em}
+.chart-wrap{position:relative;width:100%}
+.chart-wrap.h320{height:320px}
+.chart-wrap.h240{height:240px}
+.chart-wrap.h180{height:180px}
+canvas{display:block!important}
+
+/* ── TABLE ── */
+.tbl-wrap{overflow-x:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-family:'DM Mono',monospace;font-size:11px}
+th{padding:8px 12px;text-align:left;background:var(--bg3);color:var(--text3);font-weight:400;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--border)}
+td{padding:7px 12px;border-bottom:1px solid var(--border);color:var(--text2)}
+tr:hover td{background:var(--bg3);color:var(--text)}
+td.num{text-align:right;color:var(--gold);font-variant-numeric:tabular-nums}
+td.pos{color:var(--green)}
+td.neg{color:var(--red)}
+
+/* ── SECTION TITLE ── */
+.sec{font-family:'Playfair Display',serif;font-size:15px;color:var(--gold2);margin:20px 0 12px;border-bottom:1px solid var(--border);padding-bottom:8px}
+
+/* ── SIGNAL BOX ── */
+.signal-box{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:16px;margin-top:16px}
+.signal-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.signal-row:last-child{border:none}
+.signal-label{font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em}
+.signal-val{font-family:'DM Mono',monospace;font-size:14px;color:var(--gold)}
+.signal-tag{padding:3px 10px;border-radius:2px;font-family:'DM Mono',monospace;font-size:10px}
+.tag-bear{background:rgba(224,92,92,.2);color:var(--red)}
+.tag-bull{background:rgba(76,175,125,.2);color:var(--green)}
+.tag-align{background:rgba(191,167,111,.2);color:var(--gold)}
+
+/* ── EVENT FILTERS ── */
+.ev-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.ev-btn{padding:4px 14px;border-radius:2px;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--text3);transition:all .15s;text-transform:uppercase;letter-spacing:.08em}
+.ev-btn:hover{border-color:var(--gold3);color:var(--text)}
+.ev-btn.active{background:var(--gold3);color:var(--bg);border-color:var(--gold3)}
+.ev-fomc{border-color:var(--fomc)!important;color:var(--fomc)!important}
+.ev-fomc.active{background:var(--fomc)!important;color:var(--bg)!important}
+.ev-cpi{border-color:var(--cpi)!important;color:var(--cpi)!important}
+.ev-cpi.active{background:var(--cpi)!important;color:var(--bg)!important}
+.ev-rbi{border-color:var(--rbi)!important;color:var(--rbi)!important}
+.ev-rbi.active{background:var(--rbi)!important;color:var(--bg)!important}
+.ev-geo{border-color:var(--geo)!important;color:var(--geo)!important}
+.ev-geo.active{background:var(--geo)!important;color:var(--bg)!important}
+
+/* ── FORECAST BARS ── */
+.fc-bars{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.fc-bar-row{display:flex;align-items:center;gap:10px;font-family:'DM Mono',monospace;font-size:11px}
+.fc-bar-label{width:36px;color:var(--text3);text-align:right;font-size:10px}
+.fc-bar-track{flex:1;height:8px;background:var(--bg3);border-radius:2px;overflow:hidden}
+.fc-bar-fill{height:100%;background:var(--gold3);border-radius:2px;transition:width .4s}
+.fc-bar-val{width:52px;color:var(--gold);font-size:11px}
+
+/* ── LOADING ── */
+.loading{display:flex;align-items:center;justify-content:center;height:200px;color:var(--text3);font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em}
+
+/* ── DIVIDER ── */
+.divider{height:1px;background:var(--border);margin:20px 0}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  .chart-row.cols2,.chart-row.cols3{grid-template-columns:1fr}
+  header{flex-wrap:wrap;height:auto;padding:10px 16px}
+  nav.tabs{overflow-x:auto}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    Volatility Prediction Engine
+    <span>QUANTITATIVE RISK — S&P 500 & MULTI-ASSET</span>
+  </div>
+  <div class="ctrl">
+    <select id="tickerSel">
+      <option value="^GSPC">S&P 500 (^GSPC)</option>
+      <option value="^NSEI">Nifty 50 (^NSEI)</option>
+      <option value="^DJI">Dow Jones (^DJI)</option>
+      <option value="^IXIC">NASDAQ (^IXIC)</option>
+      <option value="^FTSE">FTSE 100 (^FTSE)</option>
+      <option value="^N225">Nikkei 225 (^N225)</option>
+      <option value="^HSI">Hang Seng (^HSI)</option>
+      <option value="^GDAXI">DAX (^GDAXI)</option>
+      <option value="GC=F">Gold Futures (GC=F)</option>
+      <option value="CL=F">Crude Oil WTI (CL=F)</option>
+      <option value="BTC-USD">Bitcoin (BTC-USD)</option>
+    </select>
+    <select id="periodSel">
+      <option value="1y">1 Year</option>
+      <option value="2y">2 Years</option>
+      <option value="5y" selected>5 Years</option>
+      <option value="10y">10 Years</option>
+      <option value="max">Max</option>
+    </select>
+    <button class="btn" onclick="loadAll()">ANALYSE</button>
+    <div class="status live" id="statusBadge">LIVE</div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <div class="tab active" onclick="sw('overview',this)">Overview</div>
+  <div class="tab" onclick="sw('volatility',this)">Volatility</div>
+  <div class="tab" onclick="sw('vix',this)">VIX Analysis</div>
+  <div class="tab" onclick="sw('events',this)">Event Study</div>
+  <div class="tab" onclick="sw('risk',this)">Risk Report</div>
+  <div class="tab" onclick="sw('forecast',this)">Forecast</div>
+</nav>
+
+<main>
+
+<!-- ═══════════════════ OVERVIEW ═══════════════════ -->
+<div id="panel-overview" class="panel active">
+  <div class="cards" id="ovCards">
+    <div class="card"><div class="card-label">Rolling 20d Vol</div><div class="card-value" id="ov-v20">—</div><div class="card-sub">Annualised</div></div>
+    <div class="card"><div class="card-label">EWMA Vol</div><div class="card-value" id="ov-ewma">—</div><div class="card-sub">λ = 0.94</div></div>
+    <div class="card"><div class="card-label">VIX (Implied)</div><div class="card-value" id="ov-vix">—</div><div class="card-sub" id="ov-vix-regime">—</div></div>
+    <div class="card"><div class="card-label">Sharpe Ratio</div><div class="card-value" id="ov-sharpe">—</div><div class="card-sub">Risk-adjusted return</div></div>
+    <div class="card"><div class="card-label">Max Drawdown</div><div class="card-value" id="ov-dd">—</div><div class="card-sub">Peak-to-trough</div></div>
+    <div class="card"><div class="card-label">Vol Regime</div><div class="card-value" style="font-size:14px" id="ov-regime">—</div><div id="ov-regime-badge"></div></div>
+  </div>
+
+  <div class="chart-row">
+    <div class="chart-box full">
+      <div class="chart-title">VIX Implied vs Realised Volatility — with Macro Event Markers</div>
+      <div class="chart-sub">Gold = FOMC · Blue = CPI · Green = RBI · Red = Geopolitical</div>
+      <div class="chart-wrap h320"><canvas id="ch-ov-main"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-row cols2">
+    <div class="chart-box">
+      <div class="chart-title">Rolling Volatility — Multi-Horizon</div>
+      <div class="chart-sub">20d · 60d · 120d · EWMA</div>
+      <div class="chart-wrap h240"><canvas id="ch-ov-rolling"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">GARCH(1,1) — 10-Day Forecast</div>
+      <div class="chart-sub">Annualised volatility forecast</div>
+      <div id="ch-ov-garch-bars" class="fc-bars" style="min-height:200px;padding-top:8px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ VOLATILITY ═══════════════════ -->
+<div id="panel-volatility" class="panel">
+  <div class="sec">All Estimators — Overlay</div>
+  <div class="chart-row">
+    <div class="chart-box full">
+      <div class="chart-title">All Volatility Estimators</div>
+      <div class="chart-sub">Historical · Rolling 20/60/120d · EWMA · Parkinson · Garman-Klass</div>
+      <div class="chart-wrap h320"><canvas id="ch-vol-all"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-row cols2">
+    <div class="chart-box">
+      <div class="chart-title">Range Estimators</div>
+      <div class="chart-sub">Parkinson vs Garman-Klass</div>
+      <div class="chart-wrap h240"><canvas id="ch-vol-range"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">Volatility Regime Timeline</div>
+      <div class="chart-sub">Low · Medium · High — Rolling 20d</div>
+      <div class="chart-wrap h240"><canvas id="ch-vol-regime"></canvas></div>
+    </div>
+  </div>
+  <div class="sec">Estimator Snapshot</div>
+  <div class="tbl-wrap">
+    <table><thead><tr><th>Estimator</th><th>Current</th><th>Mean</th><th>Min</th><th>Max</th><th>Std Dev</th></tr></thead>
+    <tbody id="tbl-estimators"></tbody></table>
+  </div>
+</div>
+
+<!-- ═══════════════════ VIX ═══════════════════ -->
+<div id="panel-vix" class="panel">
+  <div class="sec">VIX History with Fear Regime Bands</div>
+  <div class="chart-row">
+    <div class="chart-box full">
+      <div class="chart-title">VIX — CBOE Volatility Index</div>
+      <div class="chart-sub">Implied 30-day volatility — market fear gauge</div>
+      <div class="chart-wrap h320"><canvas id="ch-vix-hist"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-row cols2">
+    <div class="chart-box">
+      <div class="chart-title">Divergence — Fear Premium</div>
+      <div class="chart-sub">VIX implied vs Rolling 20d realised</div>
+      <div class="chart-wrap h240"><canvas id="ch-vix-div"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">GARCH Forecast vs VIX Benchmark</div>
+      <div class="chart-sub">Model bearish/bullish/aligned signal</div>
+      <div id="sig-vix" class="signal-box"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ EVENTS ═══════════════════ -->
+<div id="panel-events" class="panel">
+  <div class="sec">Macro Event Study</div>
+  <div class="ev-filters">
+    <div class="ev-btn active" onclick="fEv('all',this)">All Events</div>
+    <div class="ev-btn ev-fomc" onclick="fEv('FOMC',this)">FOMC</div>
+    <div class="ev-btn ev-cpi" onclick="fEv('CPI',this)">CPI</div>
+    <div class="ev-btn ev-rbi" onclick="fEv('RBI',this)">RBI</div>
+    <div class="ev-btn ev-geo" onclick="fEv('Geopolitical',this)">Geopolitical</div>
+    <div class="ev-btn" id="ev-refresh-btn" onclick="refreshEvents()" style="margin-left:auto;opacity:.7">↻ Refresh</div>
+  </div>
+  <div id="ev-source-note" style="font-size:10px;color:var(--text2);margin-bottom:10px"></div>
+  <div class="cards" style="grid-template-columns:repeat(5,1fr)">
+    <div class="card"><div class="card-label">Total Events</div><div class="card-value" id="ev-total">—</div></div>
+    <div class="card"><div class="card-label">Amplifying</div><div class="card-value" id="ev-amp" style="color:var(--red)">—</div></div>
+    <div class="card"><div class="card-label">Neutral</div><div class="card-value" id="ev-neu" style="color:var(--text2)">—</div></div>
+    <div class="card"><div class="card-label">Dampening</div><div class="card-value" id="ev-damp" style="color:var(--green)">—</div></div>
+    <div class="card"><div class="card-label">Avg Shock Ratio</div><div class="card-value" id="ev-avg-shock">—</div></div>
+  </div>
+  <div class="chart-row">
+    <div class="chart-box full">
+      <div class="chart-title">Shock Ratios by Event</div>
+      <div class="chart-sub">Post/pre vol ratio — top 20 events ranked</div>
+      <div class="chart-wrap h320"><canvas id="ch-ev-shock"></canvas></div>
+    </div>
+  </div>
+  <div class="sec">Event Detail Table</div>
+  <div class="tbl-wrap">
+    <table><thead><tr><th>Date</th><th>Event</th><th>Category</th><th>Pre Vol</th><th>Post Vol</th><th>Shock Ratio</th><th>Post Return</th><th>Max DD</th><th>Impact</th></tr></thead>
+    <tbody id="tbl-events"></tbody></table>
+  </div>
+</div>
+
+<!-- ═══════════════════ RISK ═══════════════════ -->
+<div id="panel-risk" class="panel">
+  <div class="sec">Risk Metrics</div>
+  <div class="cards" style="grid-template-columns:repeat(6,1fr)">
+    <div class="card"><div class="card-label">Ann. Return</div><div class="card-value" id="rk-ret">—</div></div>
+    <div class="card"><div class="card-label">Ann. Vol</div><div class="card-value" id="rk-vol">—</div></div>
+    <div class="card"><div class="card-label">Sharpe</div><div class="card-value" id="rk-sharpe">—</div></div>
+    <div class="card"><div class="card-label">Sortino</div><div class="card-value" id="rk-sortino">—</div></div>
+    <div class="card"><div class="card-label">Calmar</div><div class="card-value" id="rk-calmar">—</div></div>
+    <div class="card"><div class="card-label">Max Drawdown</div><div class="card-value" id="rk-dd">—</div></div>
+  </div>
+  <div class="chart-row cols2">
+    <div class="chart-box">
+      <div class="chart-title">Return Distribution</div>
+      <div class="chart-sub">Daily log returns histogram</div>
+      <div class="chart-wrap h280"><canvas id="ch-rk-hist"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">VaR &amp; CVaR</div>
+      <div class="chart-sub">Value at Risk — 95% and 99% confidence</div>
+      <div class="signal-box" id="sig-var" style="margin-top:0"></div>
+    </div>
+  </div>
+  <div class="sec">Full Metrics Table</div>
+  <div class="tbl-wrap">
+    <table><thead><tr><th>Metric</th><th>Value</th><th>Description</th></tr></thead>
+    <tbody id="tbl-risk"></tbody></table>
+  </div>
+</div>
+
+<!-- ═══════════════════ FORECAST ═══════════════════ -->
+<div id="panel-forecast" class="panel">
+  <div class="sec">GARCH(1,1) — 10-Day Volatility Forecast</div>
+  <div class="chart-row cols2">
+    <div class="chart-box">
+      <div class="chart-title">Day-by-Day Forecast</div>
+      <div class="chart-sub">Annualised volatility — next 10 trading days</div>
+      <div id="fc-garch-bars" class="fc-bars" style="min-height:240px;padding-top:4px"></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">Forecast vs VIX Benchmark</div>
+      <div class="chart-sub">GARCH model signal vs implied market vol</div>
+      <div id="sig-fc" class="signal-box"></div>
+    </div>
+  </div>
+  <div class="chart-row">
+    <div class="chart-box full">
+      <div class="chart-title">Historical Vol + GARCH Forecast Overlay</div>
+      <div class="chart-sub">Last 120 days realised + 10-day GARCH projection</div>
+      <div class="chart-wrap h280"><canvas id="ch-fc-overlay"></canvas></div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+// ── State ──
+const S = {
+  ticker:"^GSPC", period:"5y",
+  snapshot:null, vixSnap:null, rolling:null,
+  compare:null, risk:null, dataset:null,
+  vixHist:null, vixCmp:null, vixFc:null,
+  evData:null, evFilter:"all",
+  garchFc:null,
+};
+const charts = {};
+
+// ── Chart.js defaults ──
+Chart.defaults.color = "#6B6050";
+Chart.defaults.borderColor = "#1E2A38";
+Chart.defaults.font.family = "'DM Mono', monospace";
+Chart.defaults.font.size = 10;
+
+const BASE_OPTS = {
+  responsive:true, maintainAspectRatio:false,
+  animation:{duration:400},
+  plugins:{legend:{labels:{boxWidth:10,padding:14,color:"#A09880"}},tooltip:{backgroundColor:"#141B24",borderColor:"#263040",borderWidth:1,titleColor:"#BFA76F",bodyColor:"#A09880",padding:10}},
+  scales:{x:{grid:{color:"#111820"},ticks:{maxRotation:0,maxTicksLimit:10}},y:{grid:{color:"#111820"}}},
+};
+
+function mkC(id, type, labels, datasets, extra={}) {
+  if(charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if(!ctx) return;
+  const opts = JSON.parse(JSON.stringify(BASE_OPTS));
+  deepMerge(opts, extra);
+  charts[id] = new Chart(ctx, {type, data:{labels, datasets}, options:opts});
+}
+
+function deepMerge(t,s){for(const k in s){if(s[k]&&typeof s[k]==='object'&&!Array.isArray(s[k])){t[k]=t[k]||{};deepMerge(t[k],s[k])}else{t[k]=s[k]}}return t}
+
+// Thin array to max N points
+function thin(arr, max=280){
+  if(!arr||arr.length<=max) return arr;
+  const step=Math.ceil(arr.length/max);
+  return arr.filter((_,i)=>i%step===0);
+}
+
+// ── Tab switch ──
+function sw(id, el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('panel-'+id).classList.add('active');
+  // Trigger lazy renders on tab open
+  setTimeout(()=>renderTab(id),50);
+}
+
+function renderTab(id){
+  if(id==='overview') renderOverview();
+  if(id==='volatility') renderVolatility();
+  if(id==='vix') renderVix();
+  if(id==='events') renderEvents();
+  if(id==='risk') renderRisk();
+  if(id==='forecast') renderForecast();
+}
+
+// ── Main loader ──
+async function loadAll(){
+  S.ticker = document.getElementById('tickerSel').value;
+  S.period = document.getElementById('periodSel').value;
+  document.getElementById('statusBadge').textContent='LOADING…';
+  document.getElementById('statusBadge').className='status';
+
+  const base = `?ticker=${encodeURIComponent(S.ticker)}&period=${S.period}`;
+
+  try {
+    const [snap,vsnap,risk,rolling,ds,vixH,vixC,vixFc,ev,garch] = await Promise.all([
+      fetch(`/volatility/current${base}`).then(r=>r.json()).catch(()=>null),
+      fetch(`/vix/snapshot`).then(r=>r.json()).catch(()=>null),
+      fetch(`/volatility/risk-metrics${base}`).then(r=>r.json()).catch(()=>null),
+      fetch(`/volatility/rolling${base}`).then(r=>r.json()).catch(()=>null),
+      fetch(`/volatility/dataset${base}`).then(r=>r.json()).catch(()=>null),
+      fetch(`/vix/history?period=${S.period}`).then(r=>r.json()).catch(()=>null),
+      fetch(`/vix/compare${base}`).then(r=>r.json()).catch(()=>null),
+      fetch(`/vix/forecast-compare${base}&horizon=10`).then(r=>r.json()).catch(()=>null),
+      fetch(`/events/study${base}`).then(r=>r.json()).catch(()=>null),
+      fetch(`/predict/garch${base}&horizon=10`).then(r=>r.json()).catch(()=>null),
+    ]);
+
+    S.snapshot=snap; S.vixSnap=vsnap; S.risk=risk; S.rolling=rolling;
+    S.dataset=ds; S.vixHist=vixH; S.vixCmp=vixC; S.vixFc=vixFc;
+    S.evData=ev; S.garchFc=garch;
+
+    document.getElementById('statusBadge').textContent='LIVE';
+    document.getElementById('statusBadge').className='status live';
+
+    // Render active tab
+    const activePanel = document.querySelector('.panel.active');
+    if(activePanel){
+      const id = activePanel.id.replace('panel-','');
+      renderTab(id);
+    }
+  } catch(e){
+    document.getElementById('statusBadge').textContent='ERROR';
+    document.getElementById('statusBadge').className='status';
+    console.error(e);
+  }
+}
+
+// ── OVERVIEW ──
+function renderOverview(){
+  if(!S.snapshot) return;
+  const s=S.snapshot, v=S.vixSnap, r=S.risk;
+
+  setText('ov-v20', s.vol_20d ? pct(s.vol_20d) : '—');
+  setText('ov-ewma', s.ewma_vol ? pct(s.ewma_vol) : '—');
+  setText('ov-vix', v?.vix ? v.vix : '—');
+  setText('ov-vix-regime', v?.regime || '—');
+  setText('ov-sharpe', r?.sharpe_ratio ? r.sharpe_ratio.toFixed(2) : '—');
+  setText('ov-dd', r?.max_drawdown ? pct(r.max_drawdown) : '—');
+  setText('ov-regime', s.regime || '—');
+  const badge = document.getElementById('ov-regime-badge');
+  if(badge && s.regime){
+    const cls = s.regime==='Low'?'badge-low':s.regime==='Medium'?'badge-med':'badge-high';
+    badge.innerHTML=`<span class="card-badge ${cls}">${s.regime} Volatility</span>`;
+  }
+
+  // Main chart: VIX vs Realised — build from rolling + separate vixHist
+  (function(){
+    // Use rolling data as the backbone (always available)
+    const rolling = S.rolling && S.rolling.length ? thin(S.rolling, 280) : [];
+    if(!rolling.length) return;
+
+    const labels = rolling.map(r => r.date);
+
+    // Build a VIX lookup by date from vixHist
+    const vixByDate = {};
+    if(S.vixHist && S.vixHist.length){
+      S.vixHist.forEach(r => { vixByDate[r.Date] = r.VIX_decimal != null ? r.VIX_decimal : (r.VIX != null ? r.VIX/100 : null); });
+    }
+    // Also try vixCmp as a secondary source
+    if(S.vixCmp && S.vixCmp.length){
+      S.vixCmp.forEach(r => {
+        const v = r.VIX_decimal != null ? r.VIX_decimal : null;
+        if(v != null) vixByDate[r.Date] = v;
+      });
+    }
+
+    const vixSeries = labels.map(d => {
+      const v = vixByDate[d];
+      return v != null ? +(v*100).toFixed(2) : null;
+    });
+    const hasVix = vixSeries.some(v => v != null);
+
+    const datasets = [
+      {label:'Rolling 20d',data:rolling.map(r=>r.Vol_20d!=null?+(r.Vol_20d*100).toFixed(2):null),borderColor:'#BFA76F',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+      {label:'EWMA',data:rolling.map(r=>r.EWMA_Vol!=null?+(r.EWMA_Vol*100).toFixed(2):null),borderColor:'#4CAF7D',borderWidth:1,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+    ];
+    if(hasVix){
+      datasets.unshift({label:'VIX Implied',data:vixSeries,borderColor:'#5B9BD5',backgroundColor:'rgba(91,155,213,.08)',borderWidth:1.5,pointRadius:0,tension:.3});
+    }
+
+    const evMarks = S.evData?.events||[];
+    mkC('ch-ov-main','line',labels,datasets,{
+      plugins:{tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2)}%`}}},
+      scales:{y:{ticks:{callback:v=>v+'%'}}},
+    });
+    drawEventLines('ch-ov-main', labels, evMarks);
+  })();
+
+  // Rolling
+  if(S.rolling && S.rolling.length){
+    const d=thin(S.rolling);
+    mkC('ch-ov-rolling','line',d.map(r=>r.date),[
+      {label:'20d',data:d.map(r=>r.Vol_20d?+(r.Vol_20d*100).toFixed(2):null),borderColor:'#BFA76F',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+      {label:'60d',data:d.map(r=>r.Vol_60d?+(r.Vol_60d*100).toFixed(2):null),borderColor:'#5B9BD5',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+      {label:'120d',data:d.map(r=>r.Vol_120d?+(r.Vol_120d*100).toFixed(2):null),borderColor:'#D4884A',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+      {label:'EWMA',data:d.map(r=>r.EWMA_Vol?+(r.EWMA_Vol*100).toFixed(2):null),borderColor:'#4CAF7D',borderWidth:1,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+    ],{scales:{y:{ticks:{callback:v=>v+'%'}}}});
+  }
+
+  // GARCH bars
+  if(S.garchFc?.forecast_vol){
+    renderFcBars('ch-ov-garch-bars', S.garchFc.forecast_vol, S.garchFc.model||'GARCH');
+  }
+}
+
+// ── VOLATILITY ──
+function renderVolatility(){
+  if(!S.rolling||!S.rolling.length) return;
+  const d=thin(S.rolling);
+  const labels=d.map(r=>r.date);
+
+  mkC('ch-vol-all','line',labels,[
+    {label:'20d',data:d.map(r=>r.Vol_20d?+(r.Vol_20d*100).toFixed(2):null),borderColor:'#BFA76F',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+    {label:'60d',data:d.map(r=>r.Vol_60d?+(r.Vol_60d*100).toFixed(2):null),borderColor:'#5B9BD5',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+    {label:'120d',data:d.map(r=>r.Vol_120d?+(r.Vol_120d*100).toFixed(2):null),borderColor:'#D4884A',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+    {label:'EWMA',data:d.map(r=>r.EWMA_Vol?+(r.EWMA_Vol*100).toFixed(2):null),borderColor:'#4CAF7D',borderWidth:1,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+    {label:'Parkinson',data:d.map(r=>r.Parkinson_Vol?+(r.Parkinson_Vol*100).toFixed(2):null),borderColor:'#9B59B6',borderWidth:1,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+    {label:'Garman-Klass',data:d.map(r=>r.GarmanKlass_Vol?+(r.GarmanKlass_Vol*100).toFixed(2):null),borderColor:'#E05C5C',borderWidth:1,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+  ],{scales:{y:{ticks:{callback:v=>v+'%'}}}});
+
+  mkC('ch-vol-range','line',labels,[
+    {label:'Parkinson',data:d.map(r=>r.Parkinson_Vol?+(r.Parkinson_Vol*100).toFixed(2):null),borderColor:'#9B59B6',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'rgba(155,89,182,.06)'},
+    {label:'Garman-Klass',data:d.map(r=>r.GarmanKlass_Vol?+(r.GarmanKlass_Vol*100).toFixed(2):null),borderColor:'#E05C5C',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'rgba(224,92,92,.06)'},
+  ],{scales:{y:{ticks:{callback:v=>v+'%'}}}});
+
+  // Regime bar chart
+  const regColors = d.map(r=>{
+    const v=r.Vol_20d;
+    if(!v) return 'rgba(40,50,60,.5)';
+    if(v<0.10) return 'rgba(76,175,125,.6)';
+    if(v<0.20) return 'rgba(212,136,74,.6)';
+    return 'rgba(224,92,92,.6)';
+  });
+  mkC('ch-vol-regime','bar',labels,[
+    {label:'Vol 20d',data:d.map(r=>r.Vol_20d?+(r.Vol_20d*100).toFixed(2):null),backgroundColor:regColors,borderWidth:0},
+  ],{scales:{y:{ticks:{callback:v=>v+'%'}},x:{display:false}},plugins:{legend:{display:false}}});
+
+  // Estimator table
+  if(S.snapshot){
+    const rows=[
+      ['Historical (20d)','vol_20d'],['Rolling 60d','vol_60d'],['Rolling 120d','vol_120d'],
+      ['EWMA','ewma_vol'],['Parkinson','parkinson_vol'],['Garman-Klass','garman_klass_vol'],
+      ['Realised (21d)','realvol_21d'],
+    ];
+    const snap=S.snapshot;
+    const tbody=document.getElementById('tbl-estimators');
+    tbody.innerHTML=rows.map(([name,key])=>{
+      const v=snap[key];
+      return `<tr><td>${name}</td><td class="num">${v?pct(v):'—'}</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>`;
+    }).join('');
+  }
+}
+
+// ── VIX ──
+function renderVix(){
+  if(S.vixHist && S.vixHist.length){
+    const d=thin(S.vixHist,280);
+    const vals=d.map(r=>+r.VIX.toFixed(2));
+    mkC('ch-vix-hist','line',d.map(r=>r.Date),[
+      {label:'VIX',data:vals,borderColor:'#5B9BD5',backgroundColor:'rgba(91,155,213,.10)',borderWidth:1.5,pointRadius:0,tension:.3,fill:true},
+    ],{
+      plugins:{annotation:{}},
+      scales:{y:{suggestedMin:10,suggestedMax:60}},
+    });
+  }
+
+  // Divergence chart — compute client-side from rolling + vixHist
+  (function(){
+    if(!S.rolling || !S.rolling.length) return;
+    const rolling = thin(S.rolling, 200);
+
+    // Build VIX lookup
+    const vixByDate = {};
+    if(S.vixHist && S.vixHist.length){
+      S.vixHist.forEach(r => { vixByDate[r.Date] = r.VIX_decimal != null ? r.VIX_decimal : (r.VIX != null ? r.VIX/100 : null); });
+    }
+    if(S.vixCmp && S.vixCmp.length){
+      S.vixCmp.forEach(r => { if(r.VIX_decimal != null) vixByDate[r.Date] = r.VIX_decimal; });
+    }
+
+    const labels = rolling.map(r => r.date);
+    const divData = rolling.map(r => {
+      const vix = vixByDate[r.date];
+      const realised = r.Vol_20d;
+      if(vix == null || realised == null) return null;
+      return +((vix - realised)*100).toFixed(2);
+    });
+
+    const hasData = divData.some(v => v != null);
+    if(!hasData){
+      // Fallback: show message
+      const el = document.getElementById('ch-vix-div');
+      if(el){ const p = el.parentNode; p.innerHTML += '<div style="color:var(--text3);font-family:DM Mono,monospace;font-size:11px;padding:20px 0">VIX data unavailable for divergence calculation</div>'; }
+      return;
+    }
+
+    const colors = divData.map(v => v === null ? 'transparent' : v > 0 ? 'rgba(91,155,213,.7)' : 'rgba(76,175,125,.7)');
+    mkC('ch-vix-div','bar',labels,[
+      {label:'Divergence (VIX − Realised) %',data:divData,backgroundColor:colors,borderWidth:0},
+    ],{scales:{y:{ticks:{callback:v=>v+'%'}},x:{display:false}},plugins:{legend:{display:false}}});
+  })();
+
+  if(S.vixFc){
+    const fc=S.vixFc;
+    const sig=fc.signal||'unknown';
+    const sigTag=sig==='model_more_bearish'?'tag-bear':sig==='model_more_bullish'?'tag-bull':'tag-align';
+    const sigLabel=sig==='model_more_bearish'?'Model More Bearish':sig==='model_more_bullish'?'Model More Bullish':'Aligned';
+    document.getElementById('sig-vix').innerHTML=`
+      <div class="signal-row"><span class="signal-label">VIX (Market Implied)</span><span class="signal-val">${fc.vix_current||'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">VIX Regime</span><span class="signal-val" style="font-size:12px">${fc.vix_regime||'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">Implied Vol (decimal)</span><span class="signal-val">${fc.vix_implied_vol?pct(fc.vix_implied_vol):'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">GARCH Model Used</span><span class="signal-val" style="font-size:12px">${fc.garch_model||'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">GARCH Forecast Mean</span><span class="signal-val">${fc.garch_forecast_mean?pct(fc.garch_forecast_mean):'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">Divergence</span><span class="signal-val">${fc.divergence?pct(fc.divergence):'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">Signal</span><span class="signal-tag ${sigTag}">${sigLabel}</span></div>`;
+  }
+}
+
+// ── EVENTS ──
+async function refreshEvents(){
+  const btn = document.getElementById('ev-refresh-btn');
+  if(btn){ btn.textContent='↻ Fetching…'; btn.style.opacity='1'; }
+  try{
+    await fetch('/events/refresh');
+    // Reload event study with current ticker/period
+    const base=`?ticker=${encodeURIComponent(S.ticker)}&period=${S.period}`;
+    const ev = await fetch(`/events/study${base}`).then(r=>r.json()).catch(()=>null);
+    if(ev){ S.evData=ev; renderEvents(); }
+    if(btn){ btn.textContent='✓ Updated'; setTimeout(()=>{ btn.textContent='↻ Refresh'; btn.style.opacity='.7'; },2000); }
+  } catch(e){
+    if(btn){ btn.textContent='✗ Error'; setTimeout(()=>{ btn.textContent='↻ Refresh'; btn.style.opacity='.7'; },2000); }
+  }
+}
+
+function fEv(cat, el){
+  document.querySelectorAll('.ev-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  S.evFilter=cat;
+  renderEvents();
+}
+
+function renderEvents(){
+  if(!S.evData) return;
+  const all=S.evData.events||[];
+  const filtered=S.evFilter==='all'?all:all.filter(e=>e.category===S.evFilter);
+
+  // Compute summary stats from filtered events so cards update on category change
+  const amp=filtered.filter(e=>e.impact==='Amplifying').length;
+  const neu=filtered.filter(e=>e.impact==='Neutral').length;
+  const damp=filtered.filter(e=>e.impact==='Dampening').length;
+  const validShocks=filtered.filter(e=>e.shock_ratio&&!isNaN(e.shock_ratio));
+  const avgShock=validShocks.length?validShocks.reduce((s,e)=>s+e.shock_ratio,0)/validShocks.length:null;
+
+  setText('ev-total', filtered.length);
+  setText('ev-amp', amp);
+  setText('ev-neu', neu);
+  setText('ev-damp', damp);
+  setText('ev-avg-shock', avgShock?avgShock.toFixed(3):'—');
+
+  // Show live-data source note
+  const note = document.getElementById('ev-source-note');
+  if(note) note.textContent = 'Live data: FRED (Fed rate decisions & CPI) · RBI MPC · updated every 6h · ' + new Date().toLocaleDateString();
+
+  // Shock ratio chart
+  const top=filtered.slice(0,20);
+  mkC('ch-ev-shock','bar',top.map(e=>e.name.length>30?e.name.slice(0,28)+'…':e.name),[
+    {label:'Shock Ratio',data:top.map(e=>e.shock_ratio?+e.shock_ratio.toFixed(3):0),
+     backgroundColor:top.map(e=>e.impact==='Amplifying'?'rgba(224,92,92,.7)':e.impact==='Dampening'?'rgba(76,175,125,.7)':'rgba(160,152,128,.5)'),
+     borderWidth:0},
+  ],{
+    indexAxis:'y',
+    scales:{x:{ticks:{callback:v=>v+'×'},grid:{color:'#111820'}},y:{ticks:{font:{size:9}}}},
+    plugins:{legend:{display:false}},
+  });
+
+  // Table
+  const tbody=document.getElementById('tbl-events');
+  tbody.innerHTML=filtered.map(e=>{
+    const ic=e.impact==='Amplifying'?'badge-amp':e.impact==='Dampening'?'badge-damp':'badge-neu';
+    const catColor=e.category==='FOMC'?'var(--fomc)':e.category==='CPI'?'var(--cpi)':e.category==='RBI'?'var(--rbi)':'var(--geo)';
+    return `<tr>
+      <td>${e.date}</td><td>${e.name}</td>
+      <td style="color:${catColor}">${e.category}</td>
+      <td class="num">${e.pre_vol?pct(e.pre_vol):'—'}</td>
+      <td class="num">${e.post_vol?pct(e.post_vol):'—'}</td>
+      <td class="num ${e.shock_ratio>1.25?'neg':e.shock_ratio<0.8?'pos':''}">${e.shock_ratio?e.shock_ratio.toFixed(3):'—'}</td>
+      <td class="num ${e.avg_post_return>0?'pos':'neg'}">${e.avg_post_return?(e.avg_post_return*100).toFixed(3)+'%':'—'}</td>
+      <td class="num neg">${e.max_drawdown?pct(e.max_drawdown):'—'}</td>
+      <td><span class="card-badge ${ic}">${e.impact}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── RISK ──
+function renderRisk(){
+  if(!S.risk) return;
+  const r=S.risk;
+  setText('rk-ret', pct(r.annualised_return));
+  setText('rk-vol', pct(r.annualised_volatility));
+  setText('rk-sharpe', r.sharpe_ratio.toFixed(2));
+  setText('rk-sortino', r.sortino_ratio.toFixed(2));
+  setText('rk-calmar', r.calmar_ratio.toFixed(2));
+  setText('rk-dd', pct(r.max_drawdown));
+
+  // VaR panel
+  document.getElementById('sig-var').innerHTML=`
+    <div class="signal-row"><span class="signal-label">VaR 95%</span><span class="signal-val" style="color:var(--amber)">${pct(r.var_95)}</span></div>
+    <div class="signal-row"><span class="signal-label">VaR 99%</span><span class="signal-val" style="color:var(--red)">${pct(r.var_99)}</span></div>
+    <div class="signal-row"><span class="signal-label">CVaR 95%</span><span class="signal-val" style="color:var(--amber)">${pct(r.cvar_95)}</span></div>
+    <div class="signal-row"><span class="signal-label">CVaR 99%</span><span class="signal-val" style="color:var(--red)">${pct(r.cvar_99)}</span></div>
+    <div class="signal-row"><span class="signal-label">Skewness</span><span class="signal-val">${r.skewness.toFixed(4)}</span></div>
+    <div class="signal-row"><span class="signal-label">Kurtosis</span><span class="signal-val">${r.kurtosis.toFixed(4)}</span></div>
+    <div class="signal-row"><span class="signal-label">Trading Days</span><span class="signal-val" style="font-size:12px">${r.total_trading_days}</span></div>`;
+
+  // Return histogram — handle multiple possible key names, fallback to rolling
+  (function(){
+    let rets = [];
+    if(S.dataset && S.dataset.length){
+      // Try both capitalisations pandas might produce
+      const first = S.dataset[0];
+      const logKey = Object.keys(first).find(k => k.toLowerCase() === 'logreturn' || k.toLowerCase() === 'log_return');
+      if(logKey){
+        rets = S.dataset.map(r => r[logKey]).filter(v => v != null && !isNaN(v) && isFinite(v));
+      }
+    }
+    // Fallback: derive from rolling dataset's implicit returns
+    if(rets.length < 10 && S.rolling && S.rolling.length){
+      rets = S.rolling.map(r => r.LogReturn != null ? r.LogReturn : r.log_return).filter(v => v != null && !isNaN(v) && isFinite(v));
+    }
+    if(rets.length < 5) return;
+
+    const {labels, counts} = buildHistogram(rets, 40);
+    mkC('ch-rk-hist','bar',labels,[
+      {label:'Frequency',data:counts,backgroundColor:'rgba(191,167,111,.5)',borderColor:'#BFA76F',borderWidth:1},
+    ],{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}});
+  })();
+
+  // Full metrics table
+  const defs=[
+    ['Annualised Return',pct(r.annualised_return),'mean(LogReturn) × 252'],
+    ['Annualised Volatility',pct(r.annualised_volatility),'std(LogReturn) × √252'],
+    ['Sharpe Ratio',r.sharpe_ratio.toFixed(4),'(Ann. Return − Rf) / Ann. Vol'],
+    ['Sortino Ratio',r.sortino_ratio.toFixed(4),'Ann. Return / Downside Deviation'],
+    ['Calmar Ratio',r.calmar_ratio.toFixed(4),'Ann. Return / |Max Drawdown|'],
+    ['Max Drawdown',pct(r.max_drawdown),'(Price − Peak) / Peak'],
+    ['VaR 95%',pct(r.var_95),'5th percentile of daily returns'],
+    ['VaR 99%',pct(r.var_99),'1st percentile of daily returns'],
+    ['CVaR 95%',pct(r.cvar_95),'Mean of returns below VaR 95%'],
+    ['CVaR 99%',pct(r.cvar_99),'Mean of returns below VaR 99%'],
+    ['Skewness',r.skewness.toFixed(4),'3rd moment of return distribution'],
+    ['Kurtosis',r.kurtosis.toFixed(4),'4th moment — fat-tail measure'],
+    ['Total Trading Days',r.total_trading_days,'Number of observations'],
+  ];
+  document.getElementById('tbl-risk').innerHTML=defs.map(([k,v,d])=>`<tr><td>${k}</td><td class="num">${v}</td><td style="color:var(--text3)">${d}</td></tr>`).join('');
+}
+
+// ── FORECAST ──
+function renderForecast(){
+  if(S.garchFc?.forecast_vol){
+    renderFcBars('fc-garch-bars', S.garchFc.forecast_vol, S.garchFc.model||'GARCH');
+  }
+
+  if(S.vixFc){
+    const fc=S.vixFc;
+    const sig=fc.signal||'unknown';
+    const sigTag=sig==='model_more_bearish'?'tag-bear':sig==='model_more_bullish'?'tag-bull':'tag-align';
+    const sigLabel=sig==='model_more_bearish'?'Model More Bearish':sig==='model_more_bullish'?'Model More Bullish':'Aligned';
+    document.getElementById('sig-fc').innerHTML=`
+      <div class="signal-row"><span class="signal-label">VIX Current</span><span class="signal-val">${fc.vix_current||'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">VIX Implied Vol</span><span class="signal-val">${fc.vix_implied_vol?pct(fc.vix_implied_vol):'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">GARCH Model</span><span class="signal-val" style="font-size:12px">${fc.garch_model||'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">GARCH Forecast Mean</span><span class="signal-val">${fc.garch_forecast_mean?pct(fc.garch_forecast_mean):'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">Divergence</span><span class="signal-val">${fc.divergence?pct(fc.divergence):'—'}</span></div>
+      <div class="signal-row"><span class="signal-label">Signal</span><span class="signal-tag ${sigTag}">${sigLabel}</span></div>`;
+  }
+
+  // Historical + Forecast overlay
+  if(S.rolling && S.rolling.length && S.garchFc?.forecast_vol){
+    const last120=S.rolling.slice(-120);
+    const labels=last120.map(r=>r.date);
+    const histData=last120.map(r=>r.Vol_20d?+(r.Vol_20d*100).toFixed(2):null);
+    const fcVols=S.garchFc.forecast_vol;
+    // Pad historical with nulls for forecast days
+    const fcLabels=[...labels,...fcVols.map((_,i)=>`D+${i+1}`)];
+    const histPadded=[...histData,...Array(fcVols.length).fill(null)];
+    const fcPadded=[...Array(histData.length).fill(null),...fcVols.map(v=>+(v*100).toFixed(2))];
+    mkC('ch-fc-overlay','line',fcLabels,[
+      {label:'Realised 20d Vol',data:histPadded,borderColor:'#BFA76F',borderWidth:1.5,pointRadius:0,tension:.3,backgroundColor:'transparent'},
+      {label:'GARCH Forecast',data:fcPadded,borderColor:'#E05C5C',borderWidth:2,pointRadius:3,tension:.2,backgroundColor:'rgba(224,92,92,.15)',borderDash:[4,4]},
+    ],{scales:{y:{ticks:{callback:v=>v+'%'}}}});
+  }
+}
+
+// ── Event line drawing ──
+function drawEventLines(chartId, labels, events){
+  const chart = charts[chartId];
+  if(!chart||!events||!events.length) return;
+  const catColors={FOMC:'#BFA76F',CPI:'#5B9BD5',RBI:'#4CAF7D',Geopolitical:'#E05C5C'};
+  const plugin={
+    id:'evLines_'+chartId,
+    afterDraw(chart){
+      const {ctx,chartArea,scales}=chart;
+      if(!chartArea) return;
+      events.forEach(ev=>{
+        const idx=labels.findIndex(l=>l>=ev.date);
+        if(idx<0) return;
+        const x=scales.x.getPixelForValue(idx);
+        if(x<chartArea.left||x>chartArea.right) return;
+        ctx.save();
+        ctx.strokeStyle=catColors[ev.category]||'#BFA76F';
+        ctx.lineWidth=1;
+        ctx.setLineDash([3,3]);
+        ctx.globalAlpha=0.5;
+        ctx.beginPath();
+        ctx.moveTo(x,chartArea.top);
+        ctx.lineTo(x,chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+  };
+  Chart.register(plugin);
+  chart.update('none');
+}
+
+// ── Render forecast bars ──
+function renderFcBars(elId, vols, modelName){
+  const el=document.getElementById(elId);
+  if(!el||!vols||!vols.length) return;
+  const max=Math.max(...vols);
+  el.innerHTML=`<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);margin-bottom:8px;letter-spacing:.1em">${modelName} — ${vols.length}-DAY FORECAST</div>`
+    +vols.map((v,i)=>`
+    <div class="fc-bar-row">
+      <div class="fc-bar-label">D+${i+1}</div>
+      <div class="fc-bar-track"><div class="fc-bar-fill" style="width:${(v/max*100).toFixed(1)}%"></div></div>
+      <div class="fc-bar-val">${(v*100).toFixed(2)}%</div>
+    </div>`).join('');
+}
+
+// ── Histogram builder ──
+function buildHistogram(data, bins=40){
+  const mn=Math.min(...data), mx=Math.max(...data);
+  const step=(mx-mn)/bins;
+  const counts=Array(bins).fill(0);
+  const labels=[];
+  for(let i=0;i<bins;i++) labels.push(((mn+i*step)*100).toFixed(2)+'%');
+  data.forEach(v=>{
+    let idx=Math.floor((v-mn)/step);
+    if(idx>=bins) idx=bins-1;
+    counts[idx]++;
+  });
+  return {labels,counts};
+}
+
+// ── Helpers ──
+function setText(id,v){const el=document.getElementById(id);if(el)el.textContent=v}
+function pct(v){if(v===null||v===undefined||isNaN(v))return'—';const n=typeof v==='string'?parseFloat(v):v;return(n*100).toFixed(2)+'%'}
+
+// ── Boot ──
+window.addEventListener('load',()=>loadAll());
+</script>
+</body>
+</html>
