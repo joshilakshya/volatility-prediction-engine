@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+yfinance
+pandas
+numpy
+arch
+scikit-learn
+xgboost
+python-multipart
+httpx
+python-dateutil
+scipy
+aiofiles
+torch --index-url https://download.pytorch.org/whl/cpu
